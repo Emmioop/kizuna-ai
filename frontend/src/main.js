@@ -12,15 +12,19 @@ import Memory from './views/Memory.vue'
 import Persona from './views/Persona.vue'
 import Settings from './views/Settings.vue'
 import Greetings from './views/Greetings.vue'
+import System from './views/System.vue'
+import Tools from './views/Tools.vue'
 import './style.scss'
 
 const routes = [
   { path: '/', redirect: '/chat' },
-  { path: '/chat', component: Chat, meta: { title: '聊天' } },
-  { path: '/memory', component: Memory, meta: { title: '记忆' } },
-  { path: '/persona', component: Persona, meta: { title: '人格' } },
-  { path: '/greetings', component: Greetings, meta: { title: '问候' } },
-  { path: '/settings', component: Settings, meta: { title: '设置' } },
+  { path: '/chat', component: Chat, meta: { title: '对话终端 · CHAT TERMINAL' } },
+  { path: '/system', component: System, meta: { title: '系统控制台 · SYSTEM CONSOLE' } },
+  { path: '/tools', component: Tools, meta: { title: '工具矩阵 · TOOL MATRIX' } },
+  { path: '/memory', component: Memory, meta: { title: '数据档案 · DATA ARCHIVE' } },
+  { path: '/persona', component: Persona, meta: { title: '人格配置 · PERSONA CONFIG' } },
+  { path: '/greetings', component: Greetings, meta: { title: '问候日志 · GREETING LOG' } },
+  { path: '/settings', component: Settings, meta: { title: 'LLM 接入 · LLM SETUP' } },
 ]
 
 const router = createRouter({

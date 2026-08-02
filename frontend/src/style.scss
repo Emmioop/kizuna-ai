@@ -1,16 +1,57 @@
+/* ========================================================
+   贾维斯 · 钢铁侠 HUD 风格主题
+   深蓝背景 + 霓虹蓝/青强调 + 轻微扫描线
+   ======================================================== */
 :root {
-  --bg: #0e0e12;
-  --bg-panel: #15151c;
-  --bg-panel-2: #1b1b26;
-  --border: #2a2a36;
-  --text: #ecebdd;
-  --text-soft: #a8a79a;
-  --text-dim: #707068;
-  --accent: #f6b44f;      /* 羁绊 · 暖金色 */
-  --accent-2: #e57373;     /* 好感 · 柔粉 */
-  --accent-3: #79d279;     /* 情绪正常 */
-  --bubble-ai: #1d1f2a;
-  --bubble-user: #3b2c12;
+  --bg: #02060c;
+  --bg-panel: #06101e;
+  --bg-panel-2: #0b1a2e;
+  --border: #163a66;
+  --text: #d6ecff;
+  --text-soft: #8fb8e0;
+  --text-dim: #51769b;
+
+  /* 贾维斯主色：霓虹青 + 电弧反应堆蓝 */
+  --accent: #3fd5ff;        /* 主色：霓虹青 */
+  --accent-2: #1e90ff;       /* 辅助：亮蓝 */
+  --accent-3: #00ffaa;       /* 状态 OK：荧光绿 */
+  --accent-warn: #ffca3a;    /* 警告：琥珀 */
+  --accent-danger: #ff4757;  /* 危险：红 */
+
+  /* 气泡：贾维斯式深蓝背景 + 霓虹边框 */
+  --bubble-ai: #0a1a30;
+  --bubble-user: #0f2c52;
 }
 
 * { box-sizing: border-box; }
+
+/* 全局轻微扫描线纹理（HUD 风格） */
+body::before {
+  content: "";
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(63, 213, 255, 0.025) 0px,
+    rgba(63, 213, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  z-index: 9999;
+  mix-blend-mode: screen;
+}
+
+/* 滚动条美化（霓虹蓝） */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-panel); }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  border-radius: 8px;
+  opacity: 0.7;
+}
+
+/* 选中文本颜色 */
+::selection {
+  background: rgba(63, 213, 255, 0.35);
+  color: #fff;
+}

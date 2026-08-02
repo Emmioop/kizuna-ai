@@ -26,7 +26,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import (
-    Message, MemoryEntry, Persona, GreetingHistory,
+    Message, MemoryEntry, Persona, GreetingHistory, Reminder, ToolLog,
     make_engine, make_session_factory, create_tables_async,
     MEMORY_CATEGORIES,
 )
@@ -150,8 +150,22 @@ async def lifespan(app: FastAPI):
             finally:
                 await sess.close()
 
+        # 每 30 秒轮询提醒（倒计时是否到点
+        async def every_30s_reminder_poll():
+            sess = _SESSION_FACTORY()
+            try:
+                if _BRAIN:
+                    n = await _BRAIN.poll_reminders(sess)
+                    if n:
+                        print(f"[JARVIS] 已触发 {n} 条到点提醒")
+            except Exception as e:
+                print(f"[JARVIS] 提醒轮询失败: {e}")
+            finally:
+                await sess.close()
+
         sched.add_job(every_hour_check, "cron", minute=0, id="every_hour")
         sched.add_job(every_day_miss_check, "cron", hour=20, minute=0, id="every_day")
+        sched.add_job(every_30s_reminder_poll, "interval", seconds=30, id="every_30s_reminder")
         sched.start()
         app.state.scheduler = sched
     except Exception as e:
@@ -306,6 +320,10 @@ def register_routes(app: FastAPI):
             "mood_delta": round(result.mood_delta, 2),
             "memories_used": result.memories_used,
             "new_memories_saved": result.new_memories_saved,
+            "tool_used": result.tool_used,
+            "tool_success": result.tool_success,
+            "tool_display": result.tool_display,
+            "reminders_added": result.reminders_added,
         }
 
     @app.get("/api/chat/history", tags=["聊天"])
@@ -469,6 +487,201 @@ def register_routes(app: FastAPI):
             "trigger_time": r.trigger_time.isoformat() if r.trigger_time else None,
             "user_read": r.user_read,
         } for r in rows]
+
+    # =========================================================
+    # 6. 工具管理（贾维斯能力清单、开关、手动执行、日志）
+    # =========================================================
+    @app.get("/api/tools", tags=["工具"])
+    async def list_tools():
+        brain = get_brain()
+        return brain.tools.list_all()
+
+    class ToolToggle(BaseModel):
+        name: str
+        enabled: bool
+
+    @app.post("/api/tools/toggle", tags=["工具"])
+    async def toggle_tool(t: ToolToggle):
+        brain = get_brain()
+        try:
+            brain.tools.set_enabled(t.name, t.enabled)
+        except KeyError:
+            raise HTTPException(404, "工具不存在")
+        return {"ok": True, "name": t.name, "enabled": t.enabled}
+
+    class ToolRunReq(BaseModel):
+        name: str
+        params: dict = Field(default_factory=dict)
+
+    @app.post("/api/tools/run", tags=["工具"])
+    async def run_tool(req: ToolRunReq, brain: Brain = Depends(get_brain)):
+        meta_pair = brain.tools.get(req.name)
+        if not meta_pair:
+            raise HTTPException(404, "工具不存在")
+        if not brain.tools.is_enabled(req.name):
+            raise HTTPException(400, "工具已禁用")
+        meta, func = meta_pair
+        import asyncio as _aio
+        import time as _t
+        from .jarvis_tools import ToolResult
+        t0 = _t.time()
+        try:
+            if _aio.iscoroutinefunction(func):
+                r = await func(req.params)
+            else:
+                loop = _aio.get_running_loop()
+                r = await loop.run_in_executor(None, func, req.params)
+            if not isinstance(r, ToolResult):
+                r = ToolResult(True, str(r), display=str(r))
+            r.tool_name = req.name
+            r.duration_ms = int((_t.time() - t0) * 1000)
+        except Exception as e:
+            r = ToolResult(False, str(e), display=f"❌ 执行失败：{e}", tool_name=req.name)
+        # 写工具日志
+        tl = ToolLog(
+            tool_name=r.tool_name, user_text="[手动执行]",
+            params_json=__import__("json").dumps(req.params, ensure_ascii=False),
+            success=r.success, output=r.output[:6000],
+            duration_ms=r.duration_ms,
+        )
+        try:
+            sess = _SESSION_FACTORY()
+            async with sess:
+                sess.add(tl); await sess.commit()
+        except Exception:
+            pass
+        return {
+            "success": r.success,
+            "output": r.output,
+            "display": r.display,
+            "duration_ms": r.duration_ms,
+            "tool": r.tool_name,
+        }
+
+    @app.get("/api/tools/logs", tags=["工具"])
+    async def tool_logs(
+        tool: str = "", limit: int = Query(100, ge=1, le=500),
+        db: AsyncSession = Depends(get_db),
+    ):
+        q = select(ToolLog).order_by(desc(ToolLog.id))
+        if tool:
+            q = q.where(ToolLog.tool_name == tool)
+        rows = (await db.execute(q.limit(limit))).scalars().all()
+        return [{
+            "id": r.id, "tool": r.tool_name, "user_text": r.user_text,
+            "success": r.success, "output_preview": (r.output or "")[:400],
+            "duration_ms": r.duration_ms,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        } for r in rows]
+
+    # =========================================================
+    # 7. 提醒（倒计时 / 稍后提醒）
+    # =========================================================
+    @app.get("/api/reminders", tags=["提醒"])
+    async def list_reminders(
+        only_pending: bool = True,
+        limit: int = Query(200, ge=1, le=1000),
+        db: AsyncSession = Depends(get_db),
+    ):
+        q = select(Reminder).order_by(desc(Reminder.trigger_time))
+        if only_pending:
+            q = q.where(Reminder.triggered == False, Reminder.dismissed == False)
+            q = q.order_by(Reminder.trigger_time.asc())
+        rows = (await db.execute(q.limit(limit))).scalars().all()
+        return [{
+            "id": r.id, "note": r.note,
+            "trigger_time": r.trigger_time.isoformat() if r.trigger_time else None,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "triggered": r.triggered, "dismissed": r.dismissed,
+        } for r in rows]
+
+    class ReminderAdd(BaseModel):
+        note: str = Field(..., min_length=1, max_length=500)
+        minutes: float = Field(..., gt=0, le=60*24*365)
+
+    @app.post("/api/reminders", tags=["提醒"])
+    async def add_reminder(ra: ReminderAdd, db: AsyncSession = Depends(get_db)):
+        from datetime import timedelta
+        trigger_at = datetime.now() + timedelta(minutes=float(ra.minutes))
+        r = Reminder(note=ra.note, trigger_time=trigger_at)
+        db.add(r); await db.commit(); await db.refresh(r)
+        return {"ok": True, "id": r.id, "trigger_at": trigger_at.isoformat()}
+
+    @app.post("/api/reminders/{rid}/dismiss", tags=["提醒"])
+    async def dismiss_reminder(rid: int, db: AsyncSession = Depends(get_db)):
+        r = await db.get(Reminder, rid)
+        if not r: raise HTTPException(404)
+        r.dismissed = True; await db.commit()
+        return {"ok": True}
+
+    @app.delete("/api/reminders/{rid}", tags=["提醒"])
+    async def del_reminder(rid: int, db: AsyncSession = Depends(get_db)):
+        r = await db.get(Reminder, rid)
+        if not r: raise HTTPException(404)
+        await db.delete(r); await db.commit()
+        return {"ok": True}
+
+    # =========================================================
+    # 8. 贾维斯系统总览（给控制台页面）
+    # =========================================================
+    @app.get("/api/dashboard", tags=["系统"])
+    async def dashboard(db: AsyncSession = Depends(get_db)):
+        # 基础计数
+        from sqlalchemy import func as f
+        msg_n = (await db.execute(select(f.count(Message.id)))).scalar() or 0
+        mem_n = (await db.execute(select(f.count(MemoryEntry.id)))).scalar() or 0
+        rem_n = (await db.execute(
+            select(f.count(Reminder.id)).where(Reminder.triggered == False, Reminder.dismissed == False)
+        )).scalar() or 0
+        tool_n = (await db.execute(select(f.count(ToolLog.id)))).scalar() or 0
+        p = await Brain.get_persona(db)
+        await db.commit()
+
+        # 本机系统信息
+        try:
+            import os, shutil, platform
+            sysinfo = {}
+            sysinfo["platform"] = f"{platform.system()} {platform.release()} ({platform.machine()})"
+            sysinfo["hostname"] = platform.node()
+            sysinfo["python"] = platform.python_version()
+            disk = shutil.disk_usage("/") if os.path.isdir("/") else None
+            if disk:
+                sysinfo["disk_total_gb"] = round(disk.total / 1024**3, 1)
+                sysinfo["disk_used_gb"] = round(disk.used / 1024**3, 1)
+                sysinfo["disk_usage_pct"] = round(disk.used / disk.total * 100, 1)
+            if hasattr(os, "getloadavg"):
+                sysinfo["loadavg"] = list(os.getloadavg())
+            # 内存（Linux）
+            mem_s = {}
+            if platform.system() == "Linux" and os.path.isfile("/proc/meminfo"):
+                with open("/proc/meminfo") as fp:
+                    for l in fp.readlines()[:5]:
+                        k, v = l.split(":")
+                        mem_s[k.strip()] = int(v.strip().split()[0]) // 1024
+                total = mem_s.get("MemTotal", 0)
+                avail = mem_s.get("MemAvailable", mem_s.get("MemFree", 0))
+                if total:
+                    sysinfo["mem_total_mb"] = total
+                    sysinfo["mem_used_mb"] = total - avail
+                    sysinfo["mem_usage_pct"] = round((total - avail) / total * 100, 1)
+            sysinfo["pid"] = os.getpid()
+        except Exception as e:
+            sysinfo = {"error": str(e)}
+
+        return {
+            "counts": {
+                "messages": msg_n, "memories": mem_n,
+                "pending_reminders": rem_n, "tool_runs": tool_n,
+                "chats": p.total_chats,
+            },
+            "persona": {
+                "name": p.name, "nickname": p.nickname_for_user,
+                "trust": round(p.affection, 1), "stability": round(p.mood, 1),
+                "mood_reason": p.mood_reason,
+                "last_chat_at": p.last_chat_at.isoformat() if p.last_chat_at else None,
+            },
+            "system": sysinfo,
+        }
 
 
 # 注册路由
