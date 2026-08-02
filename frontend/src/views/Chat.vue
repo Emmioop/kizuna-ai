@@ -53,18 +53,20 @@
       </div>
     </div>
 
-    <div class="input-row">
+    <div class="input-row" :style="{ paddingBottom: bottomPad }">
       <el-input
         v-model="input"
         type="textarea"
-        :rows="2"
+        :rows="isMobile ? 1 : 2"
         resize="none"
         placeholder="请下达指令，先生。快捷命令以 / 开头，例如 /sys /weather 北京 /timer 30 开会"
         @keydown="onKey"
+        @focus="fixIosKeyboard"
         :disabled="typing"
       />
       <el-button type="primary" class="send-btn" @click="send" :loading="typing" :disabled="!input.trim()">
-        发送 <el-icon><Promotion /></el-icon>
+        <template v-if="isMobile"><el-icon><Promotion /></el-icon></template>
+        <template v-else>发送 <el-icon><Promotion /></el-icon></template>
       </el-button>
     </div>
 
@@ -97,6 +99,8 @@ const typing = ref(false)
 const listEl = ref(null)
 const lastDelta = ref(null)
 const healthOk = ref(true)
+const isMobile = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 680px)').matches
+const bottomPad = ref('0px')
 
 function renderMarkdown(s) {
   try {
@@ -192,12 +196,31 @@ function onKey(e) {
 
 let pollTimer = null
 
+let kbTimer = null
+function fixIosKeyboard() {
+  if (!isMobile) return
+  // iOS 键盘弹起后，布局可能不更新 → 等一下再滚到底部 + 调整底部安全区
+  const visH = window.visualViewport ? window.visualViewport.height : window.innerHeight
+  const winH = window.innerHeight
+  const kb = Math.max(0, winH - visH)
+  bottomPad.value = kb > 30 ? kb + 'px' : '0px'
+  setTimeout(scrollBottom, 120)
+  setTimeout(scrollBottom, 320)
+}
+
 onMounted(async () => {
   try {
     const h = (await axios.get('/api/health')).data
     healthOk.value = !!h.llm_initialized
   } catch(_) { healthOk.value = false }
   await loadHistory()
+
+  if (isMobile) {
+    window.addEventListener('focusout', fixIosKeyboard)
+    window.addEventListener('keyboardDidHide' as any, fixIosKeyboard)
+    window.addEventListener('keyboardDidShow' as any, fixIosKeyboard)
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', fixIosKeyboard)
+  }
 
   // 每 10s 轮询一次看看有没有新消息（倒计时提醒会插 assistant 消息进来）
   pollTimer = setInterval(async () => {
@@ -214,7 +237,15 @@ onMounted(async () => {
   }, 10000)
 })
 
-onBeforeUnmount(() => pollTimer && clearInterval(pollTimer))
+onBeforeUnmount(() => {
+  pollTimer && clearInterval(pollTimer)
+  if (isMobile) {
+    window.removeEventListener('focusout', fixIosKeyboard)
+    window.removeEventListener('keyboardDidHide' as any, fixIosKeyboard)
+    window.removeEventListener('keyboardDidShow' as any, fixIosKeyboard)
+    if (window.visualViewport) window.visualViewport.removeEventListener('resize', fixIosKeyboard)
+  }
+})
 </script>
 
 <style scoped lang="scss">
