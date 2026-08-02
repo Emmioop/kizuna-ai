@@ -4,6 +4,45 @@
 
 ---
 
+## 🏆 方案零：GitHub Pages 永久网址（1 分钟 + 跟您的 tno-strategy-game 一样，强烈推荐！）
+
+### 最终效果：
+您永远只需要记住这个网址：👉 **https://emmioop.github.io/kizuna-ai/**
+
+手机 4G/5G、朋友的电脑、任何能上网的设备，输入这个网址**直接就能看到贾维斯 HUD 界面**，跟您的 tno-strategy-game 完全一样！
+
+### 3 步就能用：
+#### 步骤 1（自动完成）：
+我已经帮您加好了 GitHub Actions 自动构建。您现在正在看的这版代码，只要推到 main 分支，GitHub 会自动编译前端、部署到 Pages，1~2 分钟后 https://emmioop.github.io/kizuna-ai/ 就能打开。
+
+#### 步骤 2（您只做一次）：
+打开 **https://emmioop.github.io/kizuna-ai/**  → 左侧菜单 **「⚙ LLM 接入」** → 页面顶部有 **「🌐 贾维斯后端地址」** 卡片 → 填入您的后端公网地址（看下面"怎么拿后端公网地址"），保存。
+
+#### 步骤 3（PWA 加桌面）：
+- **iPhone Safari**：点分享 → 添加到主屏幕 → 命名「贾维斯」
+- **安卓 Chrome**：菜单 → 安装应用
+
+→ 以后点开桌面图标，**全屏贾维斯，完全像 App 一样**！
+
+---
+
+### ❓ 怎么拿后端公网地址？（Cloudflare Tunnel，30 秒一条命令）
+因为 GitHub Pages 只能放静态前端，贾维斯的 Python 大脑（存您的记忆、数据库、LLM Key）必须跑在您自己的电脑/服务器上。我们用 Cloudflare Tunnel 免费给它暴露一个公网地址：
+
+1. 先在电脑上把贾维斯后端跑起来（看到 `Uvicorn running on http://0.0.0.0:8000` 才算启动好）
+2. 下载 cloudflared 工具：https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+3. CMD / 终端执行：
+   ```
+   cloudflared tunnel --url http://localhost:8000
+   ```
+4. 它会输出一行类似 → `https://happy-times-accurate-pages.trycloudflare.com`
+
+**把这个 URL 粘贴到 Pages 的「后端地址」卡片里，点保存 + 测试连接 → 成功！** ✅
+
+> 想要永久固定的后端地址？注册一个免费 Cloudflare 账号 + 几块钱的域名，就可以把 tunnel 绑到自己的域名上（比如 `jarvis.yourname.com`）。
+
+---
+
 ## 🥇 方案一：PWA「添加到主屏幕」(5 分钟搞定，推荐先用这个)
 
 贾维斯前端已经做好了移动端适配 + iOS/Android 的 PWA meta 标签。
