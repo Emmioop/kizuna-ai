@@ -1,0 +1,19 @@
+# —— 数据与机密（绝不要上传！）——
+backend/.env
+backend/data/
+backend/__pycache__/
+backend/kizuna/__pycache__/
+backend/*.sqlite3
+backend/*.db
+
+# —— 前端构建产物 & 依赖 ——
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# —— 系统 / IDE ——
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
