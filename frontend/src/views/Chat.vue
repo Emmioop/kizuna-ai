@@ -217,8 +217,8 @@ onMounted(async () => {
 
   if (isMobile) {
     window.addEventListener('focusout', fixIosKeyboard)
-    window.addEventListener('keyboardDidHide' as any, fixIosKeyboard)
-    window.addEventListener('keyboardDidShow' as any, fixIosKeyboard)
+    window.addEventListener('keyboardDidHide', fixIosKeyboard)
+    window.addEventListener('keyboardDidShow', fixIosKeyboard)
     if (window.visualViewport) window.visualViewport.addEventListener('resize', fixIosKeyboard)
   }
 
@@ -241,8 +241,8 @@ onBeforeUnmount(() => {
   pollTimer && clearInterval(pollTimer)
   if (isMobile) {
     window.removeEventListener('focusout', fixIosKeyboard)
-    window.removeEventListener('keyboardDidHide' as any, fixIosKeyboard)
-    window.removeEventListener('keyboardDidShow' as any, fixIosKeyboard)
+    window.removeEventListener('keyboardDidHide', fixIosKeyboard)
+    window.removeEventListener('keyboardDidShow', fixIosKeyboard)
     if (window.visualViewport) window.visualViewport.removeEventListener('resize', fixIosKeyboard)
   }
 })
